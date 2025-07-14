@@ -1,5 +1,4 @@
 import pandas as pd
-from openpyxl import Workbook
 
 def process_flashcards(input_file, output_file):
     # Load all sheets
@@ -7,7 +6,7 @@ def process_flashcards(input_file, output_file):
     examples_df = pd.read_excel(input_file, sheet_name='Examples')
     example_concepts_df = pd.read_excel(input_file, sheet_name='Example concepts')
     
-    # Load metadata sheets if they exist (you may need to add these)
+    # Load metadata sheets if they exist
     tones_df = pd.read_excel(input_file, sheet_name='Tones') if 'Tones' in pd.ExcelFile(input_file).sheet_names else None
     modes_df = pd.read_excel(input_file, sheet_name='Modes') if 'Modes' in pd.ExcelFile(input_file).sheet_names else None
     dialects_df = pd.read_excel(input_file, sheet_name='Dialects') if 'Dialects' in pd.ExcelFile(input_file).sheet_names else None
@@ -23,9 +22,9 @@ def process_flashcards(input_file, output_file):
     dialect_map = create_metadata_map(dialects_df)
     register_map = create_metadata_map(registers_df)
     nuance_map = create_metadata_map(nuances_df)
-    neutral = "Neutral"
-    # Create flashcards
-    flashcards = []
+
+    # Create flashcards in the desired text format
+    flashcard_entries = []
     
     for _, example_concept in example_concepts_df.iterrows():
         concept_id = example_concept['concept_id']
@@ -47,47 +46,34 @@ def process_flashcards(input_file, output_file):
         example_html = example.iloc[0]['detail']
         example_note = example.iloc[0]['note'] if 'note' in example.columns and pd.notna(example.iloc[0]['note']) else ''
         
-        # Get metadata names
-        tone_name = tone_map.get(example.iloc[0]['tone_id'], neutral) if 'tone_id' in example.columns else neutral
-        mode_name = mode_map.get(example.iloc[0]['mode_id'], neutral) if 'mode_id' in example.columns else neutral
-        dialect_name = dialect_map.get(example.iloc[0]['dialect_id'], neutral) if 'dialect_id' in example.columns else neutral
-        register_name = register_map.get(example.iloc[0]['register_id'], neutral) if 'register_id' in example.columns else neutral
-        nuance_name = nuance_map.get(example.iloc[0]['nuance_id'], neutral) if 'nuance_id' in example.columns else neutral
+        # Get metadata names (default to 'Neutral' if not specified)
+        tone_name = tone_map.get(example.iloc[0]['tone_id'], 'Neutral') if 'tone_id' in example.columns else 'Neutral'
+        mode_name = mode_map.get(example.iloc[0]['mode_id'], 'Neutral') if 'mode_id' in example.columns else 'Neutral'
+        dialect_name = dialect_map.get(example.iloc[0]['dialect_id'], 'Neutral') if 'dialect_id' in example.columns else 'Neutral'
+        register_name = register_map.get(example.iloc[0]['register_id'], 'Neutral') if 'register_id' in example.columns else 'Neutral'
+        nuance_name = nuance_map.get(example.iloc[0]['nuance_id'], 'Neutral') if 'nuance_id' in example.columns else 'Neutral'
         
-        # Build front and back of card
-        front = f"{concept_title}"
-        if concept_desc:
-            front += f": {concept_desc}"
-            
-        back = example_html.replace("&nbsp;", " ").strip()
-        back += "\n"
+        # Build the flashcard text (Front;Back format)
+        front = f"{concept_title}: {concept_desc}" if concept_desc else concept_title
+        back = example_html.replace("&nbsp;", " ").replace("<br>", "\n").strip()
+        
         if example_note:
-            back += f"{example_note + "\n" }"
+            back += f"\n{example_note}"
         
-        # Add metadata if available
-        metadata_parts = []
-        if tone_name: metadata_parts.append(f"Tone: {tone_name}")
-        if mode_name: metadata_parts.append(f"Mode: {mode_name}")
-        if dialect_name: metadata_parts.append(f"Dialect: {dialect_name}")
-        if register_name: metadata_parts.append(f"Register: {register_name}")
-        if nuance_name: metadata_parts.append(f"Nuance: {nuance_name}")
+        # Add metadata at the bottom
+        metadata = f"Tone: {tone_name}\nMode: {mode_name}\nDialect: {dialect_name}\nRegister: {register_name}\nNuance: {nuance_name}"
+        full_back = f"{back}\n{metadata}"
         
-        if metadata_parts:
-            back += "\n".join(metadata_parts) 
-        
-        flashcards.append({
-            'Front': front,
-            'Back': back + ";"
-        })
+        # Combine into a single flashcard entry
+        flashcard_entries.append(f"{front}/{full_back}")
 
-    # Create output DataFrame
-    output_df = pd.DataFrame(flashcards)
+    # Write to a text file with ";" separator
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(";\n".join(flashcard_entries) + ";")  # Ensures proper separation
     
-    # Save to Excel
-    output_df.to_excel(output_file, index=False)
-    print(f"Flashcards saved to {output_file}")
+    print(f"Flashcards saved to {output_file} (Text format)")
 
 # Usage
 input_excel = "pvo.xlsx"
-output_excel = "quizlet_flashcards.xlsx"
-process_flashcards(input_excel, output_excel)
+output_txt = "quizlet_flashcards.txt"
+process_flashcards(input_excel, output_txt)
