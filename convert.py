@@ -4,6 +4,7 @@ def process_flashcards(input_file, output_file):
     # Load all sheets
     concepts_df = pd.read_excel(input_file, sheet_name='Concepts')
     examples_df = pd.read_excel(input_file, sheet_name='Examples')
+    examples_links_df = pd.read_excel(input_file, sheet_name='Example Links')
     example_concepts_df = pd.read_excel(input_file, sheet_name='Example concepts')
     
     # Load metadata sheets if they exist
@@ -29,14 +30,19 @@ def process_flashcards(input_file, output_file):
     for _, example_concept in example_concepts_df.iterrows():
         concept_id = example_concept['concept_id']
         example_id = example_concept['example_id']
+        example_link_id = example_concept['example_link_id']
         
         # Get concept details
         concept = concepts_df[concepts_df['id'] == concept_id]
         if concept.empty:
             continue
-            
+        # Get example link details
+        link = examples_links_df[examples_links_df['id'] == example_link_id]
+        if link.empty:
+            continue
         concept_title = concept.iloc[0]['title']
         concept_desc = concept.iloc[0]['description'] if 'description' in concept.columns else ''
+        concept_link = link.iloc[0]['title'] if 'title' in concept.columns else ''
         
         # Get example details
         example = examples_df[examples_df['id'] == example_id]
@@ -45,7 +51,6 @@ def process_flashcards(input_file, output_file):
             
         example_html = example.iloc[0]['detail']
         example_note = example.iloc[0]['note'] if 'note' in example.columns and pd.notna(example.iloc[0]['note']) else ''
-        
         # Get metadata names (default to 'Neutral' if not specified)
         tone_name = tone_map.get(example.iloc[0]['tone_id'], 'Neutral') if 'tone_id' in example.columns else 'Neutral'
         mode_name = mode_map.get(example.iloc[0]['mode_id'], 'Neutral') if 'mode_id' in example.columns else 'Neutral'
@@ -61,7 +66,7 @@ def process_flashcards(input_file, output_file):
             back += f"\n{example_note}"
         
         # Add metadata at the bottom
-        metadata = f"Tone: {tone_name}\nMode: {mode_name}\nDialect: {dialect_name}\nRegister: {register_name}\nNuance: {nuance_name}"
+        metadata = f"Link: {concept_link}\nTone: {tone_name}\nMode: {mode_name}\nDialect: {dialect_name}\nRegister: {register_name}\nNuance: {nuance_name}"
         full_back = f"{back}\n{metadata}"
         
         # Combine into a single flashcard entry
