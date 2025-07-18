@@ -1,4 +1,17 @@
 import pandas as pd
+import re
+def clean_text(text):
+    """Remove HTML tags and convert to plain text"""
+    if pd.isna(text):
+        return ""
+    # Remove HTML tags
+    text = text.replace('<b>', '*').replace('</b>', '* ')
+    text = re.sub(r'<[^>]+>', '', str(text))
+    # Replace HTML entities
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
+    # Collapse multiple spaces and trim
+    text = ' '.join(text.split())
+    return text.strip()
 
 def process_flashcards(input_file, output_file):
     # Load all sheets
@@ -49,7 +62,7 @@ def process_flashcards(input_file, output_file):
         if example.empty:
             continue
             
-        example_html = example.iloc[0]['detail']
+        example_html = clean_text(example.iloc[0]['detail_html'])
         example_note = example.iloc[0]['note'] if 'note' in example.columns and pd.notna(example.iloc[0]['note']) else ''
         # Get metadata names (default to 'Neutral' if not specified)
         tone_name = tone_map.get(example.iloc[0]['tone_id'], 'Neutral') if 'tone_id' in example.columns else 'Neutral'
