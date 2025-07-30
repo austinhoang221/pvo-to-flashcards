@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 import re
 def clean_text(text):
     """Remove HTML tags and convert to plain text"""
@@ -13,11 +14,13 @@ def clean_text(text):
     text = ' '.join(text.split())
     return text.strip()
 
-def process_flashcards(input_file, output_file):
+def process_flashcards(input_file, output_folder):
+    # Create output folder if it doesn't exist
+    os.makedirs(output_folder, exist_ok=True)
+  
     # Load all sheets
     concepts_df = pd.read_excel(input_file, sheet_name='Concepts')
     examples_df = pd.read_excel(input_file, sheet_name='Examples')
-    examples_links_df = pd.read_excel(input_file, sheet_name='Example Links')
     example_concepts_df = pd.read_excel(input_file, sheet_name='Example concepts')
     
     # Load metadata sheets if they exist
@@ -37,61 +40,69 @@ def process_flashcards(input_file, output_file):
     register_map = create_metadata_map(registers_df)
     nuance_map = create_metadata_map(nuances_df)
 
-    # Create flashcards in the desired text format
-    flashcard_entries = []
-    
-    for _, example_concept in example_concepts_df.iterrows():
-        concept_id = example_concept['concept_id']
-        example_id = example_concept['example_id']
-        example_link_id = example_concept['example_link_id']
-        
+    # Group examples by concept
+    concept_groups = example_concepts_df.groupby('concept_id')
+
+    for concept_id, group in concept_groups:
         # Get concept details
         concept = concepts_df[concepts_df['id'] == concept_id]
         if concept.empty:
             continue
-        # Get example link details
-        link = examples_links_df[examples_links_df['id'] == example_link_id]
-        if link.empty:
-            continue
+            
         concept_title = concept.iloc[0]['title']
         concept_desc = concept.iloc[0]['description'] if 'description' in concept.columns else ''
-        concept_link = link.iloc[0]['title'] if 'title' in concept.columns else ''
         
-        # Get example details
-        example = examples_df[examples_df['id'] == example_id]
-        if example.empty:
-            continue
+        # Prepare filename (remove special characters)
+        safe_filename = "".join(c for c in concept_title if c.isalnum() or c in (' ', '_')).rstrip()
+        output_file = os.path.join(output_folder, f"{safe_filename}.txt")
+        
+        # Collect all examples for this concept
+        flashcard_entries = []
+        
+        for _, example_concept in group.iterrows():
+            example_id = example_concept['example_id']
             
-        example_html = clean_text(example.iloc[0]['detail_html'])
-        example_note = example.iloc[0]['note'] if 'note' in example.columns and pd.notna(example.iloc[0]['note']) else ''
-        # Get metadata names (default to 'Neutral' if not specified)
-        tone_name = tone_map.get(example.iloc[0]['tone_id'], 'Neutral') if 'tone_id' in example.columns else 'Neutral'
-        mode_name = mode_map.get(example.iloc[0]['mode_id'], 'Neutral') if 'mode_id' in example.columns else 'Neutral'
-        dialect_name = dialect_map.get(example.iloc[0]['dialect_id'], 'Neutral') if 'dialect_id' in example.columns else 'Neutral'
-        register_name = register_map.get(example.iloc[0]['register_id'], 'Neutral') if 'register_id' in example.columns else 'Neutral'
-        nuance_name = nuance_map.get(example.iloc[0]['nuance_id'], 'Neutral') if 'nuance_id' in example.columns else 'Neutral'
+            # Get example details
+            example = examples_df[examples_df['id'] == example_id]
+            if example.empty:
+                continue
+                
+            example_html = example.iloc[0]['detail']
+            example_note = example.iloc[0]['note'] if 'note' in example.columns and pd.notna(example.iloc[0]['note']) else ''
+            
+            # Get metadata names
+            tone_name = tone_map.get(example.iloc[0]['tone_id'], 'Neutral') if 'tone_id' in example.columns else 'Neutral'
+            mode_name = mode_map.get(example.iloc[0]['mode_id'], 'Neutral') if 'mode_id' in example.columns else 'Neutral'
+            dialect_name = dialect_map.get(example.iloc[0]['dialect_id'], 'Neutral') if 'dialect_id' in example.columns else 'Neutral'
+            register_name = register_map.get(example.iloc[0]['register_id'], 'Neutral') if 'register_id' in example.columns else 'Neutral'
+            nuance_name = nuance_map.get(example.iloc[0]['nuance_id'], 'Neutral') if 'nuance_id' in example.columns else 'Neutral'
+            
+            # Build the back of the card
+            back = example_html.replace("&nbsp;", " ").replace("<br>", "\n").strip()
+            if example_note:
+                back += f"\n{example_note}"
+            
+            # Add metadata
+            metadata = f"From Tap II\nTone: {tone_name}\nMode: {mode_name}\nDialect: {dialect_name}\nRegister: {register_name}\nNuance: {nuance_name}"
+            full_back = f"{back}\n{metadata}"
+            
+            # Add to this concept's examples
+            flashcard_entries.append(full_back)
         
-        # Build the flashcard text (Front;Back format)
-        front = f"{concept_title}: {concept_desc}" if concept_desc else concept_title
-        back = example_html.replace("&nbsp;", " ").replace("<br>", "\n").strip()
+        # Write to concept's file
+        with open(output_file, 'w', encoding='utf-8') as f:
+            # Concept description at top
+            concept_header = f"{concept_title}"
+            if concept_desc:
+                concept_header += f": {concept_desc}"
+            f.write(f"{concept_header}\n\n")
+            
+            # All examples separated by ;
+            f.write(";\n".join(flashcard_entries) + ";")
         
-        if example_note:
-            back += f"\n{example_note}"
-        
-        # Add metadata at the bottom
-        metadata = f"Link: {concept_link}\nTone: {tone_name}\nMode: {mode_name}\nDialect: {dialect_name}\nRegister: {register_name}\nNuance: {nuance_name}"
-        full_back = f"{back}\n{metadata}"
-        
-        # Combine into a single flashcard entry
-        flashcard_entries.append(f"{front}/{full_back}")
-
-    # Write to a text file with ";" separator
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(";\n".join(flashcard_entries) + ";")  # Ensures proper separation
-    
-    print(f"Flashcards saved to {output_file} (Text format)")
+        print(f"Created concept file: {output_file}")
 
 # Usage
 input_excel = "pvo.xlsx"
-output_txt = "quizlet_flashcards.txt"
-process_flashcards(input_excel, output_txt)
+output_folder = "concept_flashcards"
+process_flashcards(input_excel, output_folder)
